@@ -5,12 +5,14 @@ from seaborn.rest.errors import NotFoundException
 from seaborn.rest.intellisense import *
 from seaborn.table import SeabornTable
 import time
+import os
 
 __author__ = "Ben Christenson"
 __date__ = "2016-09-03"
 
 PROXIES = None  # {'http': 'http:///127.0.0.1:8080', 'https': 'https://127.0.0.1:8081'}
 DEBUG = False
+CSV_FILE = 'LRI_ODOR.csv'
 
 
 def main():
@@ -18,17 +20,22 @@ def main():
     conn = Connection(base_uri='http://www.odour.org.uk', proxies=PROXIES)
     odor_words = conn.keywords.get() if not DEBUG else ['almond', 'burnt']
     lri_columns = conn.columns.get()
-
-    table = SeabornTable(columns=['ID', 'Compound', 'Class', 'CAS', 'Mass'] +
-                                 lri_columns + ['Odour'] + odor_words + ['ID <Link>'],
-                         key_on='ID')
+    table = SeabornTable.csv_to_obj(CSV_FILE,
+                                    columns=['ID', 'Compound', 'Class', 'CAS', 'Mass'] +
+                                            lri_columns + ['Odour'] + odor_words + ['ID <Link>'],
+                                    key_on='ID')
 
     for id in range(1000, 3280) if DEBUG else xrange(1, 100000):
+        if (id,) in table:
+            continue
         if id % 100 == 0 or id == 1:
             print "Getting compound: %s" % id
+        if id %1000 == 0:
+            open(CSV_FILE, 'w').write(table.obj_to_csv())
         try:
             compound = conn.compound.get(id)
-            assert compound['Compound']
+            if not compound.get('Compound', None):
+                raise NotFoundException("Missing Name")
             table.append(compound)
         except NotFoundException as e:
             if id > 5058:  # I know where are this many ids
@@ -43,6 +50,8 @@ def main():
         if not compounds:
             break
 
+    open(CSV_FILE, 'w').write(table.obj_to_csv())
+
     for odour in odor_words:
         print 'Getting compounds for odour: %s - %s' % (odor_words.index(odour), odour)
         ids = conn.odour.get(odour=odour)
@@ -55,8 +64,8 @@ def main():
             table[id,][odour] = 1
 
     table.sort_by_key()
-    open('LRI_ODOR.html', 'w').write(table.obj_to_html())
-    open('LRI_ODOR.csv', 'w').write(table.obj_to_csv())
+    open(CSV_FILE, 'w').write(table.obj_to_csv())
+    open(CSV_FILE.split('.')[0] + '.html', 'w').write(table.obj_to_html())
     print "\n\nThat's All Folks in %s seconds" % round(time.time() - start_time, 2)
 
 
