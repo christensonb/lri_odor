@@ -20,12 +20,14 @@ def main():
     conn = Connection(base_uri='http://www.odour.org.uk', proxies=PROXIES)
     odor_words = conn.keywords.get() if not DEBUG else ['almond', 'burnt']
     lri_columns = conn.columns.get()
+
     table = SeabornTable.csv_to_obj(CSV_FILE,
                                     columns=['ID', 'Compound', 'Class', 'CAS', 'Mass'] +
                                             lri_columns + ['Odour'] + odor_words + ['ID <Link>'],
                                     key_on='ID')
 
-    for id in range(1000, 3280) if DEBUG else xrange(1, 100000):
+    for id in xrange(1, 100000) \
+            if not DEBUG else range(1000, 3280):
         if (id,) in table:
             continue
         if id % 100 == 0 or id == 1:
@@ -115,7 +117,7 @@ class Columns(Endpoint):
         :return: list of str of lri columns
         """
         ret = self.connection.get('lriindex.html')
-        options_text = ret.split('      <OPTION VALUE=any>Any<option', 1)[1].split('</SELECT>')[0]
+        options_text = ret.split('      <OPTION VALUE=any>Any<option', 1)[1].split('</SELECT>')[0].replace('\n',' ')
         columns = [word.split('>')[0] for word in options_text.split('option value=')[1:]]
         return sorted(columns)
 
