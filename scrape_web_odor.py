@@ -18,21 +18,20 @@ CSV_FILE = 'LRI_ODOR.csv'
 def main():
     start_time = time.time()
     conn = Connection(base_uri='http://www.odour.org.uk', proxies=PROXIES)
-    odor_words = conn.keywords.get() if not DEBUG else ['almond', 'burnt']
-    lri_columns = conn.columns.get()
-
+    odor_words = conn.keywords.get() if not DEBUG else ['burnt']
+    lri_columns = conn.columns.get()+['Unknown']
     table = SeabornTable.csv_to_obj(CSV_FILE,
                                     columns=['ID', 'Compound', 'Class', 'CAS', 'Mass'] +
                                             lri_columns + ['Odour'] + odor_words + ['ID <Link>'],
                                     key_on='ID')
 
-    for id in xrange(1, 100000) \
-            if not DEBUG else range(1000, 3280):
-        if (id,) in table:
+    for id in (xrange(1, 100000) \
+                       if not DEBUG else [2942, 3068, 3879, 3723]):
+        if (id,) in table and table[(id,)]['Compound'] != '':
             continue
         if id % 100 == 0 or id == 1:
             print "Getting compound: %s" % id
-        if id %1000 == 0:
+        if id % 1000 == 0:
             open(CSV_FILE, 'w').write(table.obj_to_csv())
         try:
             compound = conn.compound.get(id)
@@ -42,12 +41,19 @@ def main():
         except NotFoundException as e:
             if id > 5058:  # I know where are this many ids
                 break
+    open(CSV_FILE, 'w').write(table.obj_to_csv())
 
-    for page in xrange(1, 2 if DEBUG else 2000):
+    for page in [5] if DEBUG else xrange(2000):
         print 'Getting LRI for page: %s of compound: %s' % (page, len(table))
         compounds = conn.lri.get(page=page)
         for compound in compounds:
+            for k, v in compound.items():
+                if not v:
+                    compound.pop(k)
             table[compound['ID'],].update(compound)
+            if not compound.get('Column') in lri_columns:
+                compound['Column'] = 'Unknown'
+
             table[compound['ID'],][compound['Column']] = compound['LRI']
         if not compounds:
             break
@@ -59,6 +65,9 @@ def main():
         ids = conn.odour.get(odour=odour)
         table.set_column(odour, '')
         for id in ids:
+            if not (id,) in table:
+                continue
+
             if table[id,]['Odour']:
                 table[id,]['Odour'] += '  "%s"' % odour
             else:
@@ -117,7 +126,7 @@ class Columns(Endpoint):
         :return: list of str of lri columns
         """
         ret = self.connection.get('lriindex.html')
-        options_text = ret.split('      <OPTION VALUE=any>Any<option', 1)[1].split('</SELECT>')[0].replace('\n',' ')
+        options_text = ret.split('      <OPTION VALUE=any>Any<option', 1)[1].split('</SELECT>')[0].replace('\n', ' ')
         columns = [word.split('>')[0] for word in options_text.split('option value=')[1:]]
         return sorted(columns)
 
@@ -127,11 +136,12 @@ class Compound(Endpoint):
         response = self.connection.get('cgi-bin/compound.cgi',
                                        Compound_ID=compound_id)
         text = response.split('>Odour Data Home</a><p><font size=+2><b>', 1)[1]
-        compound = dict(ID=compound_id,
-                        Compound=text.split('</b>')[0],
-                        Class=text.split('Class:</b>', 1)[1].split('<br>')[0].strip(),
-                        CAS=text.split('CAS:</b>', 1)[1].split('<br>')[0].strip(),
-                        Mass=text.split('Mass:</b>', 1)[1].split('<br>')[0].strip())
+        compound = {'ID': compound_id,
+                    'Compound': text.split('</b>')[0].strip(),
+                    'Class': text.split('Class:</b>', 1)[1].split('<br>')[0].strip(),
+                    'CAS': text.split('CAS:</b>', 1)[1].split('<br>')[0].strip(),
+                    'Mass': text.split('Mass:</b>', 1)[1].split('<br>')[0].strip(),
+                    'ID <Link>': '%scgi-bin/view.cgi?Compound_ID=%s'%(self.connection.base_uri,compound_id)}
         return compound
 
 
